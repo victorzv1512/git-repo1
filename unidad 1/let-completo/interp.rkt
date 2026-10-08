@@ -1,0 +1,369 @@
+#lang racket
+
+#|
+   TAREA 1. Extender el lenguaje LET
+
+   Nombre:Victor Alejandro Zamorano Valenzuela
+
+
+   Convenciones. "Predice" es lo que sale de trazar con las reglas, y
+   "produce" es lo que devuelve la implementación. "Sin valor" quiere decir
+   que ninguna regla aplica, y la implementación falla.
+
+   not
+   ---
+   4. Contraste
+
+   Expresión              La especificación predice                       La implementación produce
+   ---------------------  ----------------------------------------------  ---------------------------------
+   not(zero?(0))          #f, por [zero?-v] y luego [not-v]               (boolval #f)
+   not(false)             #t, por [false], [zero?-f] y luego [not-f]      (boolval #t)
+   not(5)  (borde)        sin valor: 5 no es #t ni #f, ninguna regla      error de val->bool: Esperaba un
+                          aplica                                          booleano pero me diste #(struct:intval 5)
+
+   En las dos primeras coinciden. En la tercera la especificación calla y la
+   implementación falla con un mensaje de val->bool, que habla de val->bool y
+   no de not. Que no haya valor es coherente con que ninguna regla aplique,
+   pero el mensaje no es del lenguaje. Cambiaría la implementación, para que
+   not se queje con un error propio; la regla se queda como está.
+
+
+   and
+   ---
+   4. Contraste
+
+   Expresión                         La especificación predice                      La implementación produce
+   --------------------------------  ---------------------------------------------  ---------------------------
+   and(true, false)                  #f, por [and], [if-v] y [zero?-f]              (boolval #f)
+   and(false, car(emptylist))        #f, por [and] y [if-f]: e2 no se evalúa        (boolval #f)
+   (borde)
+   and(true, 5)  (borde)             5, por [and] y [if-v]: el if devuelve e2       (intval 5)
+                                     tal cual
+
+   En las tres coinciden. La segunda confirma que and no evalúa e2 cuando e1
+   es falso, porque [if-f] no menciona la rama then. La tercera coincide pero
+   es rara: and(true, 5) vale 5 y no un booleano, mientras que or(false, 5)
+   falla (ver or). La parte que tendría que cambiar es la regla [and], por
+   ejemplo a if e1 then (if e2 then true else false) else false, y el código
+   la seguiría porque la cláusula es la regla escrita en árboles.
+
+
+   or
+   --
+   1. Propuesta informal
+
+   or(e1, e2) es la disyunción con cortocircuito. Evalúa e1, que tiene que ser
+   un booleano. Si es verdadero, el resultado es verdadero y e2 no se evalúa
+   nunca. Si es falso, evalúa e2, que también tiene que ser un booleano, y el
+   resultado es ese booleano. Un or siempre produce un booleano.
+
+   or(false, true) = #t
+   or(true, car(emptylist)) = #t, porque e2 no se evalúa
+
+   2. Especificación formal
+
+   Expression ::= or(Expression, Expression)                   (or-exp e1 e2)
+
+      (value-of e1 ρ) = #t
+      -----------------------------------------
+      (value-of (or-exp e1 e2) ρ) = #t                              [or-v]
+
+      (value-of e1 ρ) = #f     (value-of e2 ρ) = b     b es #t o #f
+      -----------------------------------------------------------
+      (value-of (or-exp e1 e2) ρ) = b                               [or-f]
+
+   [or-v] no menciona a e2: no se evalúa, y su valor no importa, ni siquiera
+   que exista. [or-f] sí evalúa e2 y le exige ser #t o #f: eso es lo que dice
+   la premisa sobre b. Si e1 no vale #t ni #f no aplica ninguna de las dos
+   reglas. Si e1 vale #f y e2 vale otra cosa, tampoco: la especificación no
+   da valor.
+
+   4. Contraste
+
+   Expresión                       La especificación predice                       La implementación produce
+   ------------------------------  ----------------------------------------------  ---------------------------
+   or(false, true)                 #t, por [or-f] con b = #t                       (boolval #t)
+   or(true, car(emptylist))        #t, por [or-v]: e2 no se evalúa                 (boolval #t)
+   (borde)
+   or(false, 5)  (borde)           sin valor: 5 no es #t ni #f, [or-f] no aplica   error de val->bool: Esperaba un
+                                                                                   booleano pero me diste
+                                                                                   #(struct:intval 5)
+
+   En las dos primeras coinciden, y la segunda es la que prueba el
+   cortocircuito: la cláusula no toca e2 cuando v1 es verdadero. En la tercera
+   la especificación calla y la implementación falla con un mensaje de
+   val->bool, que no menciona or. Cambiaría la implementación, para que or se
+   queje con un error propio; las reglas se quedan como están.
+
+
+   xor
+   ---
+   1. Propuesta informal
+
+   xor(e1, e2) es la disyunción exclusiva: verdadera cuando exactamente una de
+   las dos es verdadera. Evalúa e1 y después e2, que se evalúa siempre, a
+   diferencia de or. Si e1 es verdadero, el resultado es la negación de e2,
+   así que e2 tiene que ser un booleano. Si e1 es falso, el resultado es el
+   valor de e2, sea cual sea.
+
+   xor(true, true) = #f
+   xor(false, true) = #t
+
+   2. Especificación formal
+
+   Expression ::= xor(Expression, Expression)                  (xor-exp e1 e2)
+
+   xor(e1, e2) ⇝ if e1 then not(e2) else e2                        [xor]
+
+   No tiene regla de inferencia: se traza la traducción, con [if-v] o [if-f]
+   y, en la primera rama, con [not-v] o [not-f].
+
+   4. Contraste
+
+   Expresión                       La especificación predice                       La implementación produce
+   ------------------------------  ----------------------------------------------  ---------------------------
+   xor(true, true)                 #f, por [xor], [if-v], [zero?-v] y [not-v]      (boolval #f)
+   xor(true, false)                #t, por [xor], [if-v], [zero?-f] y [not-f]      (boolval #t)
+   xor(false, 5)  (borde)          5, por [xor] y [if-f]: la rama else es e2       (intval 5)
+
+   En las tres coinciden. La tercera es la que hay que mirar: xor(false, 5)
+   vale 5 y no falla, y no es un booleano, mientras que xor(true, 5) sí falla
+   en val->bool, dentro de not. Eso contradice la propuesta informal, que
+   dice que un xor entrega un booleano. La parte que tendría que cambiar es
+   la regla [xor], por ejemplo a if e1 then not(e2) else if e2 then true
+   else false, y el código la seguiría. Como el enunciado trae esta cláusula
+   dada, no la toqué.
+
+
+   cond
+   ----
+   2. Especificación formal: solo la regla de cond end
+
+   cond end ⇝ car(emptylist)                                       [cond-vacío]
+
+   Un cond al que ya no le quedan ramas llega aquí cuando ninguna prueba fue
+   verdadera. car(emptylist) no tiene valor, porque [car] pide una lista de la
+   forma v :: ℓ y ⟨⟩ no la tiene. Decidí que el cond sin prueba verdadera no
+   tenga valor, y no devolver un valor inventado como #f: así un cond que se
+   olvidó de un caso falla en vez de dar una respuesta que parece buena.
+
+   4. Contraste
+
+   Expresión                              La especificación predice                   La implementación produce
+   -------------------------------------  ------------------------------------------  ---------------------------
+   let x = 3 in cond zero?(x) ==> 100     200, por [let], [cond], [if-f], [zero?-f],  (intval 200)
+     zero?(-(x,3)) ==> 200 end            [if-v], [zero?-v] y [const]
+   cond zero?(0) ==> 7                    7, por [cond] y [if-v]: ni la segunda       (intval 7)
+     car(emptylist) ==> 8 end  (borde)    prueba ni cond end se evalúan
+   cond zero?(1) ==> 1 end  (borde)       sin valor: [cond], [if-f], [cond-vacío],    error de car: contract violation,
+                                          y [car] no aplica a ⟨⟩                      expected pair?, given '()
+
+   En las dos primeras coinciden. En la tercera la especificación calla,
+   porque [cond-vacío] la lleva a un car que no tiene regla, y la
+   implementación falla con un mensaje de Racket que habla de car, una
+   palabra que quien escribió el cond nunca usó. Cambiaría la implementación:
+   que cond end se traduzca a algo que falle con un error propio. La regla
+   [cond-vacío] diría lo mismo, sin valor, y solo cambiaría el mensaje.
+
+
+   list
+   ----
+   4. Contraste
+
+   Expresión                       La especificación predice                       La implementación produce
+   ------------------------------  ----------------------------------------------  ---------------------------
+   let x = 4 in list(x, -(x,1),    ⟨4, 3, 1⟩ (4 :: 3 :: 1 :: ⟨⟩), por [let],       (listval (list (intval 4)
+     -(x,3))                       [list] tres veces, [list-vacía] y [cons]          (intval 3) (intval 1)))
+   list()  (borde)                 ⟨⟩, por [list-vacía] y [emptylist]              (listval '())
+   list(list(1), list())           ⟨1⟩ :: ⟨⟩ :: ⟨⟩, por [list] dos veces,          (listval (list
+     (borde)                       [list-vacía] y [cons]                             (listval (list (intval 1)))
+                                                                                     (listval '())))
+
+   En las tres coinciden. El borde es la lista vacía, que es el caso base de
+   la recursión de [list], y la tercera confirma que una lista puede ir dentro
+   de otra: la lista de afuera tiene dos elementos, el segundo es la vacía.
+
+
+   unpack
+   ------
+   2. Especificación formal
+
+   Expression ::= unpack {Identifier}* = Expression in Expression
+                                                               (unpack-exp xs e1 e2)
+
+   xs es la lista de nombres, y puede ser vacía. Para extender el entorno con
+   todos a la vez se usa [xs=ℓ]ρ, que se define solo cuando xs y ℓ tienen la
+   misma longitud, por casos sobre ellas:
+
+      [()=⟨⟩]ρ = ρ
+      [(x . xs)=(v :: ℓ)]ρ = [xs=ℓ]([x=v]ρ)
+
+   Primero se vincula x a v y después se sigue con el resto, así que si un
+   nombre se repite gana el último, igual que con dos let anidados.
+   largo(xs) es el número de nombres y largo(ℓ) el número de elementos.
+
+      (value-of e1 ρ) = ℓ     largo(xs) = largo(ℓ)
+      --------------------------------------------------
+      (value-of (unpack-exp xs e1 e2) ρ) = (value-of e2 [xs=ℓ]ρ)     [unpack]
+
+      (value-of e1 ρ) = ℓ     largo(xs) ≠ largo(ℓ)
+      --------------------------------------------------
+      (value-of (unpack-exp xs e1 e2) ρ) = error                     [unpack-error]
+
+   e1 se evalúa en ρ, y los nombres solo se ven en e2. En [unpack-error] e2
+   no se evalúa. error quiere decir que el programa se detiene, y no es un
+   valor. Si e1 no vale una lista, la premisa (value-of e1 ρ) = ℓ no se
+   cumple, ninguna de las dos reglas aplica y no hay valor. Sin nombres contra
+   la lista vacía aplica [unpack], y el cuerpo se evalúa en ρ. Sin nombres
+   contra una lista con elementos aplica [unpack-error].
+
+   4. Contraste
+
+   Expresión                         La especificación predice                         La implementación produce
+   --------------------------------  ------------------------------------------------  ---------------------------
+   let u = 7 in unpack x y =         4, por [let], [list], [cons], [unpack] con        (intval 4)
+     list(u, 3) in -(x, y)           ℓ = 7 :: 3 :: ⟨⟩ y [diff]: 7 - 3
+   unpack = emptylist in 5 (borde)   5, por [unpack] con xs = () y ℓ = ⟨⟩: [()=⟨⟩]ρ   (intval 5)
+                                     es ρ, y [const]
+   unpack x = list(1, 2) in x        error, por [unpack-error]: largo(xs) = 1 y        error de unpack: esperaba una
+     (borde)                         largo(ℓ) = 2                                      lista de 1 elementos, uno por
+                                                                                       nombre (x), y la lista trae 2
+   unpack x x = list(1, 2) in x      2, por [unpack] y [xs=ℓ]: [x=2][x=1]ρ, gana el    (intval 2)
+     (borde)                         último
+
+   En las cuatro coinciden. En la tercera el error es del lenguaje y no de
+   Racket: lo escribe la auxiliar unpack-error, y la especificación dice
+   error, así que no hay nada que cambiar. Queda un hueco que sí es de la
+   misma clase que el de car: unpack x = 5 in x no tiene valor en la
+   especificación y la implementación falla con un mensaje de val->list.
+   Cambiaría la implementación, para que se queje con un error propio de
+   unpack.
+
+|#
+
+(require "ast.rkt"
+         "env.rkt"
+         "vals.rkt")
+
+(provide
+ (contract-out
+  [value-of (-> expression? env?
+                expval?)]))
+
+;; Intérprete del lenguaje LET
+(define (value-of e ρ)
+  (match e
+    [(const-exp n)    (intval n)]
+    [(var-exp x)      (apply-env ρ x)]
+    [(diff-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define v2 (value-of e2 ρ))
+     (intval (- (val->int v1)
+                (val->int v2)))]
+    [(zero?-exp e1)
+     (define v1 (value-of e1 ρ))
+     (boolval (zero? (val->int v1)))]
+    [(if-exp e1 e2 e3)
+     (define v1 (value-of e1 ρ))
+     (if (val->bool v1)
+         (value-of e2 ρ)
+         (value-of e3 ρ))]
+    [(let-exp x e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define ρ* (extend-env x v1 ρ))
+     (value-of e2 ρ*)]
+
+    ;; La aritmética que va en el núcleo: minus, mul y quotient
+    [(minus-exp e1)
+     (define v1 (value-of e1 ρ))
+     (intval (- (val->int v1)))]
+    [(mul-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define v2 (value-of e2 ρ))
+     (intval (* (val->int v1)
+                (val->int v2)))]
+    [(quotient-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define v2 (value-of e2 ρ))
+     (intval (quotient (val->int v1)
+                       (val->int v2)))]
+
+    ;; Los booleanos que van en el núcleo: equal? y less?
+    [(equal?-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define v2 (value-of e2 ρ))
+     (boolval (equal? v1 v2))]
+    [(less?-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define v2 (value-of e2 ρ))
+     (boolval (val<? v1 v2))]
+
+    ;; Las listas
+    [(emptylist-exp)
+     (listval '())]
+    [(cons-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define v2 (value-of e2 ρ))
+     (listval (cons v1 (val->list v2)))]
+    [(car-exp e1)
+     (define v1 (value-of e1 ρ))
+     (car (val->list v1))]
+    [(cdr-exp e1)
+     (define v1 (value-of e1 ρ))
+     (listval (cdr (val->list v1)))]
+    [(null?-exp e1)
+     (define v1 (value-of e1 ρ))
+     (boolval (null? (val->list v1)))]
+
+    ;; La tarea: not y unpack en el núcleo
+    ;; [not-v] y [not-f]
+    [(not-exp e1)
+     (define v1 (value-of e1 ρ))
+     (boolval (not (val->bool v1)))]
+    ;; [unpack] cuando las longitudes coinciden, [unpack-error] cuando no
+    [(unpack-exp xs e1 e2)
+     (define v1 (value-of e1 ρ))
+     (define vs (val->list v1))
+     (if (= (length xs) (length vs))
+         (value-of e2 (extend-env* xs vs ρ))
+         (unpack-error xs vs))]
+
+    ;; La tarea, lo que viene hecho en el núcleo: or
+    [(or-exp e1 e2)
+     (define v1 (value-of e1 ρ))
+     (if (val->bool v1)
+         (boolval #t)
+         (boolval (val->bool (value-of e2 ρ))))]))
+
+;; Si una cláusula necesita una función auxiliar, va aquí abajo, con nombre
+;; propio, y no escondida dentro de la cláusula.
+
+;; [xs=ℓ]ρ: extiende ρ una vez por cada nombre, en orden. Si un nombre se
+;; repite, gana el último, igual que con let anidados. Sigue la definición:
+;;   [()=⟨⟩]ρ = ρ
+;;   [(x . xs)=(v :: ℓ)]ρ = [xs=ℓ]([x=v]ρ)
+;; Supone que xs y vs tienen la misma longitud: unpack lo revisa antes.
+(define (extend-env* xs vs ρ)
+  (cond
+    [(null? xs) ρ]
+    [else       (extend-env* (rest xs)
+                             (rest vs)
+                             (extend-env (first xs) (first vs) ρ))]))
+
+;; [unpack-error]: la lista no trae tantos elementos como nombres hay.
+(define (unpack-error xs vs)
+  (error 'unpack
+         "esperaba una lista de ~a elementos, uno por nombre ~a, y la lista trae ~a"
+         (length xs) xs (length vs)))
+
+;; El orden de los valores expresados: false es menor que todo lo demás,
+;; true es mayor que todo lo demás, y entre números es el < de siempre.
+;; Es estricto: ningún valor es menor que sí mismo.
+(define (val<? v1 v2)
+  (match (list v1 v2)
+    [(list (boolval #f) (boolval #f)) #f]
+    [(list (boolval #f) _)            #t]
+    [(list (boolval #t) _)            #f]
+    [(list _            (boolval #f)) #f]
+    [(list _            (boolval #t)) #t]
+    [(list (intval n1)  (intval n2))  (< n1 n2)]))
